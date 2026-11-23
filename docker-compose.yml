@@ -1,0 +1,12 @@
+services:
+  goredis:
+    build: .
+    ports:
+      - "6379:6379"   # RESP (use redis-cli, any Redis client library)
+      - "8080:8080"   # web dashboard
+    volumes:
+      - goredis-data:/data
+    command: ["-maxmemory", "256mb", "-maxmemory-policy", "allkeys-lru"]
+    restart: unless-stopped
+volumes:
+  goredis-data:

@@ -1,0 +1,51 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - name: Lint
+        run: make lint
+      - name: Test (race detector)
+        run: go test -race -count=1 -coverprofile=coverage.out ./...
+      - name: Coverage
+        run: go tool cover -func=coverage.out | tail -1
+      - name: Fuzz RESP parser (30s)
+        run: go test -run='^$' -fuzz=FuzzReadCommand -fuzztime=30s ./internal/resp
+      - name: Build
+        run: make build
+
+  compat:
+    name: redis-cli / redis-benchmark compatibility
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.24"
+      - run: sudo apt-get update && sudo apt-get install -y redis-tools
+      - name: Smoke test with the official Redis tools
+        run: |
+          make build
+          ./bin/goredis -port 6379 -dashboard "" -save "" &
+          sleep 1
+          redis-cli SET hello world
+          test "$(redis-cli GET hello)" = "world"
+          redis-benchmark -q -n 20000 -c 20 -t set,get,incr,lpush,zadd
+
+  docker:
+    runs-on: ubuntu-latest
+    needs: test
+    steps:
+      - uses: actions/checkout@v4
+      - run: docker build -t goredis:ci .

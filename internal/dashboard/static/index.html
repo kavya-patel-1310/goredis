@@ -1,0 +1,592 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>GoRedis Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%23ff4f5e'/%3E%3Cpath d='M8 11l8-4 8 4-8 4zM8 16l8 4 8-4M8 21l8 4 8-4' fill='none' stroke='white' stroke-width='2' stroke-linejoin='round'/%3E%3C/svg%3E">
+<style>
+:root{
+  --bg:#0a0d14; --panel:#111622; --panel2:#151b2a; --line:#1f2738; --line2:#2a3449;
+  --text:#e6eaf2; --muted:#8a94a8; --dim:#5d667a;
+  --accent:#ff4f5e; --accent2:#ff8a65; --teal:#2dd4bf; --blue:#60a5fa; --violet:#a78bfa; --amber:#fbbf24; --green:#34d399;
+  --mono: ui-monospace, "JetBrains Mono", "SF Mono", Menlo, Consolas, monospace;
+  --radius:12px;
+}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--text);font:14px/1.45 Inter,ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+button,input,select,textarea{font:inherit;color:inherit}
+a{color:var(--blue)}
+.app{display:grid;grid-template-columns:232px 1fr;height:100vh}
+/* sidebar */
+.side{background:#0c1019;border-right:1px solid var(--line);display:flex;flex-direction:column;padding:18px 12px}
+.brand{display:flex;align-items:center;gap:10px;padding:4px 8px 20px}
+.logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--accent),var(--accent2));display:grid;place-items:center;box-shadow:0 6px 20px -6px rgba(255,79,94,.6)}
+.brand b{font-size:16px;letter-spacing:.2px}.brand small{display:block;color:var(--muted);font-size:11px;margin-top:-2px}
+.nav{display:flex;flex-direction:column;gap:2px}
+.nav button{all:unset;cursor:pointer;display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:9px;color:var(--muted);font-weight:500}
+.nav button svg{width:17px;height:17px;flex:none;opacity:.9}
+.nav button:hover{background:#141a28;color:var(--text)}
+.nav button.on{background:linear-gradient(90deg,rgba(255,79,94,.16),rgba(255,79,94,.04));color:var(--text);box-shadow:inset 2px 0 0 var(--accent)}
+.side-foot{margin-top:auto;padding:12px;border:1px solid var(--line);border-radius:10px;background:var(--panel);font-size:12px;color:var(--muted)}
+.side-foot .row{display:flex;justify-content:space-between;padding:2px 0}
+.side-foot .row b{color:var(--text);font-weight:500;font-family:var(--mono);font-size:11.5px}
+.dot{width:8px;height:8px;border-radius:50%;background:var(--dim);display:inline-block;margin-right:6px}
+.dot.live{background:var(--green);box-shadow:0 0 0 0 rgba(52,211,153,.6);animation:pulse 2s infinite}
+@keyframes pulse{0%{box-shadow:0 0 0 0 rgba(52,211,153,.55)}70%{box-shadow:0 0 0 7px rgba(52,211,153,0)}100%{box-shadow:0 0 0 0 rgba(52,211,153,0)}}
+/* main */
+main{overflow:auto;min-width:0}
+.top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:14px;padding:16px 28px;background:rgba(10,13,20,.85);backdrop-filter:blur(8px);border-bottom:1px solid var(--line)}
+.top h1{font-size:18px;margin:0;font-weight:600}
+.top .sub{color:var(--muted);font-size:12.5px}
+.top .spacer{flex:1}
+.pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border:1px solid var(--line2);border-radius:999px;font-size:12px;color:var(--muted);background:var(--panel)}
+.page{padding:22px 28px 40px;display:none}
+.page.on{display:block}
+.grid{display:grid;gap:16px}
+.cards{grid-template-columns:repeat(6,minmax(0,1fr))}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:var(--radius);padding:16px;min-width:0}
+.card h3{margin:0 0 12px;font-size:13px;font-weight:600;color:var(--muted);display:flex;align-items:center;justify-content:space-between;letter-spacing:.2px}
+.stat .label{color:var(--muted);font-size:12px;font-weight:500}
+.stat .val{font-size:26px;font-weight:650;margin:4px 0 2px;font-variant-numeric:tabular-nums;letter-spacing:-.5px}
+.stat .hint{color:var(--dim);font-size:11.5px}
+.stat canvas{width:100%;height:34px;margin-top:8px;display:block}
+.row2{grid-template-columns:2fr 1fr;margin-top:16px}
+.row3{grid-template-columns:1fr 1fr;margin-top:16px}
+.row4{grid-template-columns:1.3fr 1fr 1fr;margin-top:16px}
+.chart{width:100%;height:220px;display:block}
+.chart.sm{height:170px}
+.legend{display:flex;gap:14px;font-size:12px;color:var(--muted);font-weight:500}
+.legend i{display:inline-block;width:10px;height:3px;border-radius:2px;margin-right:6px;vertical-align:middle}
+.bars .bar{display:grid;grid-template-columns:110px 1fr 70px 70px;gap:10px;align-items:center;padding:5px 0;font-size:12.5px}
+.bars .bar .n{font-family:var(--mono);color:var(--text);overflow:hidden;text-overflow:ellipsis}
+.bars .track{height:8px;background:#1a2132;border-radius:4px;overflow:hidden}
+.bars .fill{height:100%;background:linear-gradient(90deg,var(--accent),var(--accent2));border-radius:4px;transition:width .5s}
+.bars .num{text-align:right;color:var(--muted);font-family:var(--mono);font-size:11.5px}
+.kv{display:grid;grid-template-columns:auto 1fr;gap:7px 14px;font-size:13px}
+.kv span{color:var(--muted)}.kv b{font-weight:500;font-family:var(--mono);font-size:12.5px;text-align:right}
+.btn{cursor:pointer;border:1px solid var(--line2);background:var(--panel2);padding:7px 12px;border-radius:8px;font-weight:500;font-size:13px;transition:.15s}
+.btn:hover{border-color:#3a4660;background:#1a2133}
+.btn.primary{background:linear-gradient(135deg,var(--accent),#ff6a55);border-color:transparent;color:white}
+.btn.primary:hover{filter:brightness(1.08)}
+.btn.danger{color:#ff8a8a;border-color:#4a2530;background:#1c1218}
+.btn.sm{padding:4px 9px;font-size:12px}
+.btns{display:flex;gap:8px;flex-wrap:wrap}
+input.in,select.in,textarea.in{background:#0d121c;border:1px solid var(--line2);border-radius:8px;padding:8px 11px;outline:none;transition:border .15s}
+input.in:focus,select.in:focus,textarea.in:focus{border-color:var(--accent)}
+.donut-wrap{display:flex;align-items:center;gap:18px}
+.donut-legend{display:flex;flex-direction:column;gap:6px;font-size:12.5px}
+.donut-legend div{display:flex;align-items:center;gap:8px}
+.donut-legend i{width:10px;height:10px;border-radius:3px;display:inline-block}
+.donut-legend b{margin-left:auto;font-family:var(--mono);font-weight:500;padding-left:12px}
+/* keys */
+.keys-layout{display:grid;grid-template-columns:minmax(380px,1fr) 1.2fr;gap:16px;height:calc(100vh - 140px)}
+.toolbar{display:flex;gap:8px;margin-bottom:12px}
+.toolbar .in{flex:1}
+.klist{overflow:auto;flex:1;margin:0 -16px;border-top:1px solid var(--line)}
+.krow{display:grid;grid-template-columns:60px 1fr 70px 64px;gap:10px;padding:8px 16px;border-bottom:1px solid #161d2b;cursor:pointer;align-items:center;font-size:13px}
+.krow:hover{background:#141b29}.krow.on{background:rgba(255,79,94,.08);box-shadow:inset 2px 0 0 var(--accent)}
+.krow .k{font-family:var(--mono);font-size:12.5px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.krow .t,.krow .s{color:var(--muted);font-size:11.5px;text-align:right;font-family:var(--mono)}
+.badge{display:inline-block;font-size:10.5px;font-weight:600;padding:2px 7px;border-radius:5px;text-transform:uppercase;letter-spacing:.4px;text-align:center}
+.b-string{background:rgba(96,165,250,.14);color:var(--blue)}
+.b-list{background:rgba(45,212,191,.14);color:var(--teal)}
+.b-hash{background:rgba(167,139,250,.15);color:var(--violet)}
+.b-set{background:rgba(251,191,36,.14);color:var(--amber)}
+.b-zset{background:rgba(255,79,94,.15);color:var(--accent)}
+.col{display:flex;flex-direction:column;min-height:0}
+.detail-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.detail-head .name{font-family:var(--mono);font-size:15px;font-weight:600;word-break:break-all}
+.meta{display:flex;gap:18px;flex-wrap:wrap;font-size:12px;color:var(--muted);padding:10px 0 14px;border-bottom:1px solid var(--line);margin-bottom:14px}
+.meta b{color:var(--text);font-family:var(--mono);font-weight:500}
+.vbox{overflow:auto;flex:1;min-height:0}
+pre.val{margin:0;white-space:pre-wrap;word-break:break-word;font-family:var(--mono);font-size:12.5px;background:#0d121c;border:1px solid var(--line);padding:14px;border-radius:10px}
+table.t{width:100%;border-collapse:collapse;font-size:12.5px}
+table.t th{text-align:left;color:var(--muted);font-weight:500;padding:8px 10px;border-bottom:1px solid var(--line);position:sticky;top:0;background:var(--panel);font-size:12px}
+table.t td{padding:7px 10px;border-bottom:1px solid #161d2b;font-family:var(--mono);vertical-align:top;word-break:break-all}
+table.t td.idx{color:var(--dim);width:48px}
+.empty{color:var(--dim);text-align:center;padding:50px 20px;font-size:13px}
+/* console */
+.term{background:#070a10;border:1px solid var(--line);border-radius:var(--radius);height:calc(100vh - 140px);display:flex;flex-direction:column;overflow:hidden}
+.term-bar{display:flex;align-items:center;gap:7px;padding:10px 14px;border-bottom:1px solid var(--line);background:#0b0f18;font-size:12px;color:var(--muted)}
+.term-bar i{width:11px;height:11px;border-radius:50%;display:inline-block}
+.term-out{flex:1;overflow:auto;padding:14px 16px;font-family:var(--mono);font-size:13px;line-height:1.55}
+.term-out .cmd{color:var(--text)}.term-out .cmd::before{content:"goredis> ";color:var(--accent)}
+.term-out .r{white-space:pre-wrap;word-break:break-word;color:#c9d1e0;margin-bottom:8px}
+.term-out .r.err{color:#ff8a8a}.term-out .r.int{color:var(--amber)}.term-out .r.nil{color:var(--dim)}.term-out .r.status{color:var(--green)}
+.term-out .r .time{color:var(--dim);font-size:11px}
+.term-in{display:flex;align-items:center;border-top:1px solid var(--line);padding:4px 16px;background:#0b0f18}
+.term-in span{color:var(--accent);font-family:var(--mono);font-size:13px}
+.term-in input{flex:1;background:transparent;border:0;outline:0;padding:11px 8px;font-family:var(--mono);font-size:13px}
+.hints{display:flex;gap:6px;flex-wrap:wrap;padding:8px 16px;border-top:1px solid var(--line);background:#0b0f18}
+.hints button{all:unset;cursor:pointer;font-family:var(--mono);font-size:11.5px;color:var(--muted);border:1px solid var(--line2);padding:3px 8px;border-radius:6px}
+.hints button:hover{color:var(--text);border-color:var(--accent)}
+/* stream lists */
+.stream{background:#070a10;border:1px solid var(--line);border-radius:10px;height:calc(100vh - 230px);overflow:auto;font-family:var(--mono);font-size:12.5px;padding:8px 0}
+.stream div{padding:3px 14px;white-space:pre-wrap;word-break:break-all;border-left:2px solid transparent}
+.stream div:hover{background:#0f1520;border-left-color:var(--accent)}
+.stream .ts{color:var(--dim)}.stream .cl{color:var(--violet)}.stream .c{color:var(--accent2);font-weight:600}.stream .ch{color:var(--teal)}
+.chips{display:flex;gap:6px;flex-wrap:wrap}
+.chip{font-family:var(--mono);font-size:11.5px;padding:3px 9px;border-radius:999px;background:rgba(45,212,191,.12);color:var(--teal);border:1px solid rgba(45,212,191,.25)}
+.modal{position:fixed;inset:0;background:rgba(4,6,10,.7);display:none;place-items:center;z-index:50;backdrop-filter:blur(4px)}
+.modal.on{display:grid}
+.modal .card{width:380px;padding:24px}
+.toast{position:fixed;bottom:22px;right:22px;background:var(--panel2);border:1px solid var(--line2);padding:11px 16px;border-radius:10px;font-size:13px;opacity:0;transform:translateY(10px);transition:.25s;z-index:60;pointer-events:none}
+.toast.on{opacity:1;transform:none}
+.flex{display:flex;gap:10px;align-items:center}
+.muted{color:var(--muted)}
+::-webkit-scrollbar{width:10px;height:10px}::-webkit-scrollbar-thumb{background:#1f2738;border-radius:10px;border:2px solid var(--bg)}
+@media (max-width:1300px){.cards{grid-template-columns:repeat(3,1fr)}.row4{grid-template-columns:1fr 1fr}}
+@media (max-width:900px){.app{grid-template-columns:1fr}.side{display:none}.row2,.row3,.row4,.keys-layout{grid-template-columns:1fr}.cards{grid-template-columns:repeat(2,1fr)}}
+</style>
+</head>
+<body>
+<div class="app">
+  <aside class="side">
+    <div class="brand">
+      <div class="logo"><svg width="18" height="18" viewBox="0 0 32 32"><path d="M6 11l10-5 10 5-10 5zM6 16l10 5 10-5M6 21l10 5 10-5" fill="none" stroke="white" stroke-width="2.4" stroke-linejoin="round"/></svg></div>
+      <div><b>GoRedis</b><small>in-memory data store</small></div>
+    </div>
+    <nav class="nav" id="nav">
+      <button data-p="overview" class="on"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 13h8V3H3zM13 21h8V11h-8zM13 3v6h8V3zM3 21h8v-6H3z"/></svg>Overview</button>
+      <button data-p="keys"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="8" cy="15" r="4"/><path d="M10.8 12.2L20 3m-3 3l3 3m-6 0l2 2"/></svg>Key Browser</button>
+      <button data-p="console"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 17l6-5-6-5M12 19h8"/></svg>Console</button>
+      <button data-p="monitor"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12h4l3-8 4 16 3-8h4"/></svg>Monitor</button>
+      <button data-p="pubsub"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 11a9 9 0 019 9M4 4a16 16 0 0116 16"/><circle cx="5" cy="19" r="1.5"/></svg>Pub/Sub</button>
+      <button data-p="slowlog"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="13" r="8"/><path d="M12 9v4l2 2M9 2h6"/></svg>Slowlog</button>
+      <button data-p="clients"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="9" cy="8" r="4"/><path d="M2 21a7 7 0 0114 0M16 4a4 4 0 010 8M22 21a7 7 0 00-4-6.3"/></svg>Clients</button>
+      <button data-p="server"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="7" rx="2"/><rect x="3" y="13" width="18" height="7" rx="2"/><path d="M7 7.5h.01M7 16.5h.01"/></svg>Server</button>
+    </nav>
+    <div class="side-foot">
+      <div class="row"><span><span class="dot" id="liveDot"></span><span id="liveTxt">connecting</span></span></div>
+      <div class="row"><span>Version</span><b id="fVer">–</b></div>
+      <div class="row"><span>Address</span><b id="fAddr">–</b></div>
+      <div class="row"><span>Uptime</span><b id="fUp">–</b></div>
+    </div>
+  </aside>
+
+  <main>
+    <div class="top">
+      <div><h1 id="title">Overview</h1><div class="sub" id="subtitle">Real-time server metrics</div></div>
+      <div class="spacer"></div>
+      <span class="pill" id="pAof">AOF –</span>
+      <span class="pill" id="pPolicy">policy –</span>
+      <span class="pill"><span class="dot live"></span><span id="pOps">0</span>&nbsp;ops/s</span>
+    </div>
+
+    <!-- OVERVIEW -->
+    <section class="page on" id="p-overview">
+      <div class="grid cards">
+        <div class="card stat"><div class="label">Throughput</div><div class="val" id="sOps">0</div><div class="hint">ops / second</div><canvas id="spOps"></canvas></div>
+        <div class="card stat"><div class="label">Memory</div><div class="val" id="sMem">0</div><div class="hint" id="sMemHint">dataset estimate</div><canvas id="spMem"></canvas></div>
+        <div class="card stat"><div class="label">Keys</div><div class="val" id="sKeys">0</div><div class="hint" id="sKeysHint">0 with TTL</div><canvas id="spKeys"></canvas></div>
+        <div class="card stat"><div class="label">Clients</div><div class="val" id="sCli">0</div><div class="hint" id="sCliHint">0 blocked</div><canvas id="spCli"></canvas></div>
+        <div class="card stat"><div class="label">Hit rate</div><div class="val" id="sHit">–</div><div class="hint" id="sHitHint">0 hits / 0 misses</div><canvas id="spHit"></canvas></div>
+        <div class="card stat"><div class="label">Commands</div><div class="val" id="sCmds">0</div><div class="hint" id="sCmdsHint">total processed</div><canvas id="spNet"></canvas></div>
+      </div>
+      <div class="grid row2">
+        <div class="card"><h3>Operations per second <span class="legend"><span><i style="background:var(--accent)"></i>ops/s</span><span class="muted">last 5 min</span></span></h3><canvas class="chart" id="chOps"></canvas></div>
+        <div class="card"><h3>Keyspace by type</h3><div class="donut-wrap"><canvas id="donut" width="170" height="170" style="width:170px;height:170px"></canvas><div class="donut-legend" id="donutLegend"></div></div>
+          <div class="kv" style="margin-top:18px"><span>Expired keys</span><b id="kExp">0</b><span>Evicted keys</span><b id="kEv">0</b><span>Pub/Sub channels</span><b id="kPs">0</b></div></div>
+      </div>
+      <div class="grid row3">
+        <div class="card"><h3>Memory usage <span class="legend"><span><i style="background:var(--violet)"></i>dataset</span></span></h3><canvas class="chart sm" id="chMem"></canvas></div>
+        <div class="card"><h3>Network <span class="legend"><span><i style="background:var(--teal)"></i>in KB/s</span><span><i style="background:var(--blue)"></i>out KB/s</span></span></h3><canvas class="chart sm" id="chNet"></canvas></div>
+      </div>
+      <div class="grid row4">
+        <div class="card"><h3>Top commands <span class="muted" style="font-weight:400">calls · µs/call</span></h3><div class="bars" id="cmdBars"><div class="empty">No commands yet</div></div></div>
+        <div class="card"><h3>Persistence</h3><div class="kv" id="persist"></div>
+          <div class="btns" style="margin-top:16px"><button class="btn sm" onclick="runAction('BGSAVE')">BGSAVE</button><button class="btn sm" onclick="runAction('BGREWRITEAOF')">BGREWRITEAOF</button></div></div>
+        <div class="card"><h3>Runtime</h3><div class="kv" id="runtime"></div>
+          <div class="btns" style="margin-top:16px"><button class="btn sm" onclick="runAction('DEBUG POPULATE 10000 demo 64')">Populate 10k keys</button><button class="btn sm danger" onclick="if(confirm('Delete ALL keys?'))runAction('FLUSHALL')">FLUSHALL</button></div></div>
+      </div>
+    </section>
+
+    <!-- KEYS -->
+    <section class="page" id="p-keys">
+      <div class="keys-layout">
+        <div class="card col">
+          <div class="toolbar">
+            <input class="in" id="kPattern" placeholder="Pattern, e.g. user:*" value="*">
+            <select class="in" id="kType" style="flex:none;width:110px"><option value="">All types</option><option>string</option><option>list</option><option>hash</option><option>set</option><option>zset</option></select>
+            <button class="btn primary" onclick="scanKeys(true)">Scan</button>
+          </div>
+          <div class="flex muted" style="font-size:12px;margin-bottom:8px"><span id="kCount">0 keys</span><span class="spacer" style="flex:1"></span><button class="btn sm" id="kMore" onclick="scanKeys(false)" disabled>Load more</button></div>
+          <div class="klist" id="kList"><div class="empty">Press Scan to browse keys</div></div>
+        </div>
+        <div class="card col" id="kDetail"><div class="empty" style="margin:auto">Select a key to inspect its value</div></div>
+      </div>
+    </section>
+
+    <!-- CONSOLE -->
+    <section class="page" id="p-console">
+      <div class="term">
+        <div class="term-bar"><i style="background:#ff5f57"></i><i style="background:#febc2e"></i><i style="background:#28c840"></i><span style="margin-left:8px">goredis-cli — commands run through the same executor as TCP clients</span><span style="flex:1"></span><button class="btn sm" onclick="clearTerm()">Clear</button></div>
+        <div class="term-out" id="termOut"><div class="r status">Welcome to GoRedis. Type HELP-free Redis commands, ↑/↓ for history. Try: SET hello world · INCR visits · ZADD lb 100 alice · INFO stats</div></div>
+        <div class="hints" id="hints"></div>
+        <div class="term-in"><span>goredis&gt;</span><input id="termIn" autocomplete="off" spellcheck="false" placeholder="PING"></div>
+      </div>
+    </section>
+
+    <!-- MONITOR -->
+    <section class="page" id="p-monitor">
+      <div class="flex" style="margin-bottom:12px">
+        <button class="btn primary" id="monBtn" onclick="toggleMonitor()">Start monitoring</button>
+        <button class="btn" onclick="$('#monOut').innerHTML='';monCount=0;$('#monCnt').textContent='0'">Clear</button>
+        <input class="in" id="monFilter" placeholder="Filter (substring)…" style="width:260px">
+        <span class="muted" style="font-size:12px"><b id="monCnt">0</b> commands captured</span>
+      </div>
+      <div class="stream" id="monOut"><div class="muted">Live stream of every command processed by the server (equivalent to redis-cli MONITOR).</div></div>
+    </section>
+
+    <!-- PUBSUB -->
+    <section class="page" id="p-pubsub">
+      <div class="grid row3" style="margin-top:0">
+        <div class="card"><h3>Subscribe</h3>
+          <div class="flex"><input class="in" id="subIn" placeholder="news, chat:*  (patterns allowed)" style="flex:1"><button class="btn primary" id="subBtn" onclick="toggleSub()">Subscribe</button></div>
+          <div class="chips" id="subChips" style="margin-top:10px"></div></div>
+        <div class="card"><h3>Publish</h3>
+          <div class="flex"><input class="in" id="pubCh" placeholder="channel" style="width:150px"><input class="in" id="pubMsg" placeholder="message" style="flex:1"><button class="btn" onclick="publish()">Publish</button></div>
+          <div class="muted" id="pubRes" style="font-size:12px;margin-top:10px">Messages are delivered to TCP subscribers too (try redis-cli SUBSCRIBE).</div></div>
+      </div>
+      <div class="stream" id="subOut" style="margin-top:16px;height:calc(100vh - 330px)"><div class="muted">Messages will appear here.</div></div>
+    </section>
+
+    <!-- SLOWLOG -->
+    <section class="page" id="p-slowlog">
+      <div class="card">
+        <h3><span>Commands slower than <b id="slowTh">–</b> µs</span><span class="btns"><button class="btn sm" onclick="runAction('DEBUG SLEEP 0.02').then(loadSlowlog)">Simulate slow command</button><button class="btn sm" onclick="runAction('SLOWLOG RESET').then(loadSlowlog)">Reset</button><button class="btn sm" onclick="loadSlowlog()">Refresh</button></span></h3>
+        <table class="t"><thead><tr><th>ID</th><th>Time</th><th>Duration</th><th>Command</th><th>Client</th></tr></thead><tbody id="slowBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- CLIENTS -->
+    <section class="page" id="p-clients">
+      <div class="card">
+        <h3><span>Connected clients</span><button class="btn sm" onclick="loadClients()">Refresh</button></h3>
+        <table class="t"><thead><tr><th>ID</th><th>Address</th><th>Name</th><th>Age</th><th>Idle</th><th>State</th><th>Last command</th><th></th></tr></thead><tbody id="cliBody"></tbody></table>
+      </div>
+    </section>
+
+    <!-- SERVER -->
+    <section class="page" id="p-server">
+      <div class="grid row3" style="margin-top:0">
+        <div class="card"><h3><span>Configuration</span><span class="muted" style="font-weight:400">editable with CONFIG SET</span></h3><table class="t"><tbody id="cfgBody"></tbody></table></div>
+        <div class="card"><h3><span>INFO</span><button class="btn sm" onclick="loadInfo()">Refresh</button></h3><pre class="val" id="infoOut" style="max-height:calc(100vh - 220px);overflow:auto"></pre></div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<div class="modal" id="authModal"><div class="card"><h3 style="color:var(--text);font-size:16px">Authentication required</h3><p class="muted" style="margin-top:0">This server has <code>requirepass</code> set.</p>
+  <input class="in" type="password" id="authPass" placeholder="Password" style="width:100%"><div class="btns" style="margin-top:14px;justify-content:flex-end"><button class="btn primary" onclick="saveAuth()">Unlock</button></div></div></div>
+<div class="toast" id="toast"></div>
+
+<script>
+const $ = s => document.querySelector(s);
+const $$ = s => [...document.querySelectorAll(s)];
+let TOKEN = ''; try { TOKEN = localStorage.getItem('goredis.token') || ''; } catch(e) {}
+const C = getComputedStyle(document.documentElement);
+const col = n => C.getPropertyValue('--'+n).trim();
+const esc = s => String(s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+
+// ---------- formatting
+const fmtNum = n => n >= 1e9 ? (n/1e9).toFixed(2)+'B' : n >= 1e6 ? (n/1e6).toFixed(2)+'M' : n >= 1e4 ? (n/1e3).toFixed(1)+'K' : Math.round(n).toLocaleString();
+const fmtBytes = b => b >= 1<<30 ? (b/(1<<30)).toFixed(2)+' GB' : b >= 1<<20 ? (b/(1<<20)).toFixed(1)+' MB' : b >= 1024 ? (b/1024).toFixed(1)+' KB' : b+' B';
+const fmtDur = s => { const d=Math.floor(s/86400), h=Math.floor(s%86400/3600), m=Math.floor(s%3600/60); return d? `${d}d ${h}h` : h? `${h}h ${m}m` : m? `${m}m ${s%60}s` : `${s}s`; };
+const fmtTTL = ms => ms < 0 ? '∞' : ms < 1000 ? ms+'ms' : fmtDur(Math.round(ms/1000));
+
+// ---------- API
+async function api(path, opts={}) {
+  opts.headers = Object.assign({'X-GoRedis-Token': TOKEN}, opts.headers||{});
+  const r = await fetch(path, opts);
+  if (r.status === 401) { $('#authModal').classList.add('on'); throw new Error('auth'); }
+  return r.json();
+}
+const withTok = p => TOKEN ? p + (p.includes('?')?'&':'?') + 'token=' + encodeURIComponent(TOKEN) : p;
+async function exec(command) {
+  return api('/api/exec', {method:'POST', headers:{'Content-Type':'application/json'}, body: JSON.stringify(Array.isArray(command)?{args:command}:{command})});
+}
+async function runAction(cmd) {
+  const r = await exec(cmd);
+  toast(r.type === 'error' ? '✗ ' + r.result.error : '✓ ' + cmd.split(' ')[0] + ': ' + (typeof r.result === 'object' ? 'OK' : r.result));
+  return r;
+}
+function saveAuth() { TOKEN = $('#authPass').value; try{localStorage.setItem('goredis.token', TOKEN)}catch(e){} $('#authModal').classList.remove('on'); startStream(); }
+let toastT; function toast(msg){ const t=$('#toast'); t.textContent=msg; t.classList.add('on'); clearTimeout(toastT); toastT=setTimeout(()=>t.classList.remove('on'),2600); }
+
+// ---------- navigation
+const titles = {overview:['Overview','Real-time server metrics'],keys:['Key Browser','Inspect and edit the keyspace (SCAN-based, non-blocking)'],console:['Console','Run commands against the live server'],monitor:['Monitor','Every command, as it executes'],pubsub:['Pub/Sub','Subscribe to channels and publish messages'],slowlog:['Slowlog','Commands that exceeded the latency threshold'],clients:['Clients','Active TCP connections'],server:['Server','Configuration and INFO']};
+let page = 'overview';
+function show(p) {
+  page = p;
+  $$('#nav button').forEach(b => b.classList.toggle('on', b.dataset.p === p));
+  $$('.page').forEach(s => s.classList.toggle('on', s.id === 'p-'+p));
+  $('#title').textContent = titles[p][0]; $('#subtitle').textContent = titles[p][1];
+  if (p === 'keys' && !keysLoaded) scanKeys(true);
+  if (p === 'slowlog') loadSlowlog();
+  if (p === 'clients') loadClients();
+  if (p === 'server') { loadConfig(); loadInfo(); }
+  if (p === 'console') setTimeout(() => $('#termIn').focus(), 50);
+  if (p === 'overview') requestAnimationFrame(drawAll);
+  history.replaceState(null, '', '#'+p);
+}
+$$('#nav button').forEach(b => b.onclick = () => show(b.dataset.p));
+
+// ---------- charts (dependency-free canvas)
+function setupCanvas(cv) {
+  const dpr = window.devicePixelRatio || 1, w = cv.clientWidth, h = cv.clientHeight;
+  if (!w || !h) return null;
+  if (cv.width !== w*dpr || cv.height !== h*dpr) { cv.width = w*dpr; cv.height = h*dpr; }
+  const ctx = cv.getContext('2d'); ctx.setTransform(dpr,0,0,dpr,0,0); ctx.clearRect(0,0,w,h);
+  return {ctx, w, h};
+}
+function niceMax(v) { if (v <= 0) return 1; const p = Math.pow(10, Math.floor(Math.log10(v))); const n = v/p; return (n<=1?1:n<=1.5?1.5:n<=2?2:n<=2.5?2.5:n<=4?4:n<=5?5:n<=8?8:10)*p; }
+function lineChart(cv, series, fmt = fmtNum) {
+  const s = setupCanvas(cv); if (!s) return; const {ctx, w, h} = s;
+  const n = Math.max(...series.map(x => x.data.length), 2);
+  const max = niceMax(Math.max(...series.flatMap(x => x.data), 0) * 1.1);
+  ctx.font = '11px ui-monospace,monospace';
+  const labelW = Math.max(...[0,1,2,3,4].map(i => ctx.measureText(fmt(max*i/4)).width));
+  const pad = {l: Math.ceil(labelW) + 14, r: 8, t: 8, b: 20};
+  const X = i => pad.l + (w-pad.l-pad.r) * i/(n-1), Y = v => pad.t + (h-pad.t-pad.b) * (1 - v/max);
+  ctx.font = '11px ui-monospace,monospace'; ctx.fillStyle = col('dim'); ctx.strokeStyle = '#1a2131'; ctx.lineWidth = 1;
+  for (let i = 0; i <= 4; i++) { const v = max*i/4, y = Y(v); ctx.beginPath(); ctx.moveTo(pad.l, y+.5); ctx.lineTo(w-pad.r, y+.5); ctx.stroke(); ctx.textAlign='right'; ctx.fillText(fmt(v), pad.l-8, y+4); }
+  ctx.textAlign = 'center'; [['-5m',0],['-2.5m',.5],['now',1]].forEach(([t,f]) => ctx.fillText(t, pad.l + (w-pad.l-pad.r)*f, h-4));
+  for (const sr of series) {
+    const d = sr.data; if (!d.length) continue; const off = n - d.length;
+    ctx.beginPath(); d.forEach((v,i) => i ? ctx.lineTo(X(i+off), Y(v)) : ctx.moveTo(X(i+off), Y(v)));
+    ctx.strokeStyle = sr.color; ctx.lineWidth = 2; ctx.lineJoin = 'round'; ctx.stroke();
+    if (sr.fill !== false) {
+      ctx.lineTo(X(d.length-1+off), Y(0)); ctx.lineTo(X(off), Y(0)); ctx.closePath();
+      const g = ctx.createLinearGradient(0, pad.t, 0, h-pad.b); g.addColorStop(0, sr.color+'44'); g.addColorStop(1, sr.color+'00');
+      ctx.fillStyle = g; ctx.fill();
+    }
+    const lv = d[d.length-1]; ctx.beginPath(); ctx.arc(X(d.length-1+off), Y(lv), 3.5, 0, 7); ctx.fillStyle = sr.color; ctx.fill();
+  }
+}
+function spark(cv, data, color) {
+  const s = setupCanvas(cv); if (!s || data.length < 2) return; const {ctx, w, h} = s;
+  const d = data.slice(-60), max = Math.max(...d, 1) * 1.15, min = 0;
+  const X = i => w*i/(d.length-1), Y = v => h - 2 - (h-4)*(v-min)/(max-min);
+  ctx.beginPath(); d.forEach((v,i) => i ? ctx.lineTo(X(i), Y(v)) : ctx.moveTo(0, Y(v)));
+  ctx.strokeStyle = color; ctx.lineWidth = 1.6; ctx.stroke();
+  ctx.lineTo(w, h); ctx.lineTo(0, h); ctx.closePath();
+  const g = ctx.createLinearGradient(0,0,0,h); g.addColorStop(0, color+'33'); g.addColorStop(1, color+'00'); ctx.fillStyle = g; ctx.fill();
+}
+const typeColors = {string:'#60a5fa', list:'#2dd4bf', hash:'#a78bfa', set:'#fbbf24', zset:'#ff4f5e'};
+function donut(cv, counts) {
+  const ctx = cv.getContext('2d'), dpr = devicePixelRatio||1; cv.width = 170*dpr; cv.height = 170*dpr; ctx.setTransform(dpr,0,0,dpr,0,0);
+  const total = Object.values(counts).reduce((a,b)=>a+b,0);
+  const cx = 85, cy = 85, r = 70, rw = 18; let a = -Math.PI/2;
+  ctx.lineWidth = rw; ctx.lineCap = 'butt';
+  if (!total) { ctx.beginPath(); ctx.arc(cx,cy,r,0,7); ctx.strokeStyle='#1a2131'; ctx.stroke(); }
+  for (const [t, c] of Object.entries(counts)) { const da = c/total*Math.PI*2; ctx.beginPath(); ctx.arc(cx,cy,r,a+0.02,a+da-0.02); ctx.strokeStyle = typeColors[t]; ctx.stroke(); a += da; }
+  ctx.fillStyle = col('text'); ctx.font = '600 22px Inter,system-ui'; ctx.textAlign = 'center'; ctx.fillText(fmtNum(total), cx, cy+4);
+  ctx.fillStyle = col('muted'); ctx.font = '11px Inter,system-ui'; ctx.fillText('keys', cx, cy+20);
+  $('#donutLegend').innerHTML = ['string','list','hash','set','zset'].map(t => `<div><i style="background:${typeColors[t]}"></i>${t}<b>${fmtNum(counts[t]||0)}</b></div>`).join('');
+}
+
+// ---------- live stats
+let hist = [], last = null;
+function ingest(st) {
+  last = st;
+  if (st.history) for (const h of st.history) if (!hist.length || h.t > hist[hist.length-1].t) hist.push(h);
+  if (hist.length > 300) hist = hist.slice(-300);
+  render();
+}
+function render() {
+  const st = last; if (!st) return;
+  $('#fVer').textContent = 'v' + st.version; $('#fAddr').textContent = st.addr || '–'; $('#fUp').textContent = fmtDur(st.uptimeSec);
+  $('#pOps').textContent = fmtNum(st.opsPerSec);
+  $('#pAof').innerHTML = st.aofEnabled ? `<span class="dot live"></span>AOF ${st.aofPolicy}` : 'AOF off';
+  $('#pPolicy').textContent = st.policy + (st.maxMemory ? ' · ' + fmtBytes(st.maxMemory) : '');
+  $('#sOps').textContent = fmtNum(st.opsPerSec);
+  $('#sMem').textContent = fmtBytes(st.usedMemory);
+  $('#sMemHint').textContent = st.maxMemory ? `of ${fmtBytes(st.maxMemory)} (${(st.usedMemory/st.maxMemory*100).toFixed(0)}%)` : 'dataset estimate · no limit';
+  $('#sKeys').textContent = fmtNum(st.keys); $('#sKeysHint').textContent = `${fmtNum(st.expires)} with TTL`;
+  $('#sCli').textContent = st.clients; $('#sCliHint').textContent = `${st.blockedClients} blocked · ${fmtNum(st.totalConnections)} total`;
+  const tot = st.hits + st.misses; $('#sHit').textContent = tot ? (st.hits/tot*100).toFixed(1)+'%' : '–';
+  $('#sHitHint').textContent = `${fmtNum(st.hits)} hits / ${fmtNum(st.misses)} misses`;
+  $('#sCmds').textContent = fmtNum(st.totalCommands); $('#sCmdsHint').textContent = `in ${fmtBytes(st.netIn)} · out ${fmtBytes(st.netOut)}`;
+  $('#kExp').textContent = fmtNum(st.expired); $('#kEv').textContent = fmtNum(st.evicted); $('#kPs').textContent = `${st.pubsubChannels} (+${st.pubsubPatterns} patterns)`;
+  $('#persist').innerHTML = kv([
+    ['Append-only file', st.aofEnabled ? 'enabled' : 'disabled'], ['fsync policy', st.aofEnabled ? st.aofPolicy : '–'],
+    ['AOF size', st.aofEnabled ? fmtBytes(st.aofSize) : '–'], ['AOF rewrite', st.aofRewriting ? 'in progress' : 'idle'],
+    ['Last snapshot', new Date(st.lastSave*1000).toLocaleTimeString()], ['Changes since save', fmtNum(st.changesSinceSave)],
+    ['BGSAVE', st.bgSaveRunning ? 'in progress' : 'idle']]);
+  $('#runtime').innerHTML = kv([['Go heap', fmtBytes(st.goHeap)], ['Goroutines', st.goroutines], ['GC cycles', st.gcCycles], ['Uptime', fmtDur(st.uptimeSec)], ['Pub/Sub messages', fmtNum(st.pubsubMessages)]]);
+  const cmds = (st.commands || []).slice(0, 9), mx = Math.max(...cmds.map(c => c.calls), 1);
+  $('#cmdBars').innerHTML = cmds.length ? cmds.map(c => `<div class="bar"><span class="n">${esc(c.name)}</span><div class="track"><div class="fill" style="width:${(c.calls/mx*100).toFixed(1)}%"></div></div><span class="num">${fmtNum(c.calls)}</span><span class="num">${c.usecPerCall.toFixed(2)}µs</span></div>`).join('') : '<div class="empty">No commands yet</div>';
+  if (page === 'overview') drawAll();
+}
+const kv = rows => rows.map(([k,v]) => `<span>${k}</span><b>${esc(v)}</b>`).join('');
+function drawAll() {
+  if (!last) return;
+  const h = hist;
+  lineChart($('#chOps'), [{data: h.map(x=>x.ops), color: col('accent')}]);
+  lineChart($('#chMem'), [{data: h.map(x=>x.mem), color: col('violet')}], fmtBytes);
+  lineChart($('#chNet'), [{data: h.map(x=>x.inKBps), color: col('teal')}, {data: h.map(x=>x.outKBps), color: col('blue'), fill:false}], v => v.toFixed(v<10?1:0));
+  spark($('#spOps'), h.map(x=>x.ops), col('accent')); spark($('#spMem'), h.map(x=>x.mem), col('violet'));
+  spark($('#spKeys'), h.map(x=>x.keys), col('blue')); spark($('#spCli'), h.map(x=>x.clients), col('teal'));
+  spark($('#spHit'), h.map(x=>x.hitRate*100), col('green')); spark($('#spNet'), h.map(x=>x.inKBps+x.outKBps), col('amber'));
+  donut($('#donut'), last.typeCounts || {});
+}
+window.addEventListener('resize', () => page === 'overview' && drawAll());
+
+let es;
+async function startStream() {
+  try { ingest(await api('/api/stats')); } catch(e) { return; }
+  if (es) es.close();
+  es = new EventSource(withTok('/api/stream'));
+  es.addEventListener('stats', e => { ingest(JSON.parse(e.data)); setLive(true); });
+  es.onerror = () => setLive(false);
+}
+function setLive(on) { $('#liveDot').classList.toggle('live', on); $('#liveTxt').textContent = on ? 'live' : 'reconnecting…'; }
+
+// ---------- key browser
+let kCursor = '0', keysLoaded = false, kRows = [], kSel = null;
+async function scanKeys(reset) {
+  keysLoaded = true;
+  if (reset) { kCursor = '0'; kRows = []; }
+  // Each request scans a bounded slice of the keyspace (keeps the server
+  // responsive); keep paging until we have a screenful or reach the end.
+  const want = kRows.length + 100;
+  for (let i = 0; i < 50; i++) {
+    const q = new URLSearchParams({cursor: kCursor, pattern: $('#kPattern').value || '*', type: $('#kType').value, count: 200});
+    const r = await api('/api/keys?' + q);
+    kRows = kRows.concat(r.keys); kCursor = r.cursor;
+    if (kCursor === '0' || kRows.length >= want) break;
+  }
+  $('#kMore').disabled = kCursor === '0';
+  $('#kCount').textContent = `${kRows.length.toLocaleString()} keys loaded` + (kCursor === '0' ? ' (complete)' : '');
+  $('#kList').innerHTML = kRows.length ? kRows.map((k,i) => `<div class="krow ${k.key===kSel?'on':''}" data-i="${i}"><span class="badge b-${k.type}">${k.type}</span><span class="k" title="${esc(k.key)}">${esc(k.key)}</span><span class="t">${fmtTTL(k.ttl)}</span><span class="s">${fmtBytes(k.size)}</span></div>`).join('') : '<div class="empty">No keys match</div>';
+}
+$('#kList').onclick = e => { const r = e.target.closest('.krow'); if (r) openKey(kRows[r.dataset.i].key); };
+$('#kPattern').onkeydown = e => e.key === 'Enter' && scanKeys(true);
+$('#kType').onchange = () => scanKeys(true);
+async function openKey(key) {
+  kSel = key; $$('.krow').forEach(r => r.classList.toggle('on', kRows[r.dataset.i]?.key === key));
+  const d = await api('/api/key?key=' + encodeURIComponent(key));
+  const el = $('#kDetail');
+  if (d.error) { el.innerHTML = `<div class="empty" style="margin:auto">Key no longer exists</div>`; return; }
+  let body = '';
+  const v = d.value;
+  if (d.type === 'string') body = `<pre class="val">${esc(prettyMaybeJSON(v))}</pre>`;
+  else if (d.type === 'list' || d.type === 'set') body = `<table class="t"><thead><tr><th>#</th><th>${d.type==='list'?'Element':'Member'}</th></tr></thead><tbody>${(v||[]).map((x,i)=>`<tr><td class="idx">${i}</td><td>${esc(x)}</td></tr>`).join('')}</tbody></table>`;
+  else if (d.type === 'hash') body = `<table class="t"><thead><tr><th>Field</th><th>Value</th></tr></thead><tbody>${(v||[]).map(([f,x])=>`<tr><td>${esc(f)}</td><td>${esc(x)}</td></tr>`).join('')}</tbody></table>`;
+  else if (d.type === 'zset') body = `<table class="t"><thead><tr><th>Rank</th><th>Member</th><th>Score</th></tr></thead><tbody>${(v||[]).map((x,i)=>`<tr><td class="idx">${i}</td><td>${esc(x.member)}</td><td style="color:var(--amber)">${x.score}</td></tr>`).join('')}</tbody></table>`;
+  el.innerHTML = `
+    <div class="detail-head"><span class="badge b-${d.type}">${d.type}</span><span class="name">${esc(d.key)}</span></div>
+    <div class="meta"><span>TTL <b>${fmtTTL(d.ttl)}</b></span><span>${d.type==='string'?'Length':'Items'} <b>${fmtNum(d.len)}</b></span><span>Memory <b>${fmtBytes(d.size)}</b></span><span>Encoding <b>${d.encoding}</b></span><span>Idle <b>${fmtDur(d.idleSec)}</b></span></div>
+    <div class="btns" style="margin-bottom:14px"><input class="in" id="ttlIn" placeholder="TTL seconds" style="width:120px"><button class="btn sm" onclick="setTTL()">Set TTL</button><button class="btn sm" onclick="keyCmd(['PERSIST',kSel])">Persist</button><button class="btn sm" onclick="openKey(kSel)">Refresh</button><span style="flex:1"></span><button class="btn sm danger" onclick="delKey()">Delete</button></div>
+    ${d.truncated ? '<div class="muted" style="font-size:12px;margin-bottom:8px">Showing first 1,000 items</div>' : ''}
+    <div class="vbox">${body}</div>`;
+}
+function prettyMaybeJSON(s) { try { const o = JSON.parse(s); if (typeof o === 'object' && o) return JSON.stringify(o, null, 2); } catch(e) {} return s; }
+async function keyCmd(args) { const r = await exec(args); toast(r.type==='error' ? '✗ '+r.result.error : '✓ '+args[0]+' → '+JSON.stringify(r.result)); openKey(kSel); }
+function setTTL() { const s = $('#ttlIn').value.trim(); if (s) keyCmd(['EXPIRE', kSel, s]); }
+async function delKey() { if (!confirm('Delete ' + kSel + '?')) return; await exec(['DEL', kSel]); toast('✓ deleted'); kRows = kRows.filter(k => k.key !== kSel); kSel = null; scanKeys(false).catch(()=>{}); $('#kDetail').innerHTML = '<div class="empty" style="margin:auto">Key deleted</div>'; }
+
+// ---------- console
+const termHist = []; let termIdx = 0;
+try { termHist.push(...JSON.parse(localStorage.getItem('goredis.hist')||'[]')); termIdx = termHist.length; } catch(e) {}
+function fmtReply(v, indent = '') {
+  if (v === null) return '(nil)';
+  if (Array.isArray(v)) { if (!v.length) return '(empty array)'; const w = String(v.length).length; return v.map((x,i) => { const p = `${String(i+1).padStart(w)}) `; return (i ? indent : '') + p + fmtReply(x, indent + ' '.repeat(p.length)); }).join('\n'); }
+  if (typeof v === 'number') return '(integer) ' + v;
+  if (typeof v === 'object' && v.error) return '(error) ' + v.error;
+  return JSON.stringify(v);
+}
+async function runTerm(line) {
+  if (!line.trim()) return;
+  termHist.push(line); termIdx = termHist.length; try { localStorage.setItem('goredis.hist', JSON.stringify(termHist.slice(-200))); } catch(e) {}
+  const out = $('#termOut');
+  out.insertAdjacentHTML('beforeend', `<div class="cmd">${esc(line)}</div>`);
+  if (/^clear$/i.test(line.trim())) return clearTerm();
+  try {
+    const r = await exec(line);
+    const cls = {error:'err', integer:'int', nil:'nil', status:'status'}[r.type] || '';
+    const txt = r.type === 'status' ? r.result : r.type === 'error' ? '(error) ' + r.result.error : fmtReply(r.result);
+    out.insertAdjacentHTML('beforeend', `<div class="r ${cls}">${esc(txt)} <span class="time">${r.us}µs</span></div>`);
+  } catch(e) { out.insertAdjacentHTML('beforeend', `<div class="r err">${esc(e.message)}</div>`); }
+  out.scrollTop = out.scrollHeight;
+}
+function clearTerm() { $('#termOut').innerHTML = ''; }
+$('#termIn').onkeydown = e => {
+  if (e.key === 'Enter') { const v = e.target.value; e.target.value = ''; runTerm(v); }
+  else if (e.key === 'ArrowUp') { if (termIdx > 0) e.target.value = termHist[--termIdx]; e.preventDefault(); }
+  else if (e.key === 'ArrowDown') { termIdx = Math.min(termIdx+1, termHist.length); e.target.value = termHist[termIdx] || ''; e.preventDefault(); }
+};
+['PING','SET user:1 \'{"name":"Ada"}\' EX 60','GET user:1','INCR visits','LPUSH queue job1 job2','HSET u:1 name ada age 36','ZADD lb 120 alice 95 bob','ZRANGE lb 0 -1 WITHSCORES REV','SCAN 0 COUNT 20','INFO memory','DBSIZE'].forEach(c => {
+  const b = document.createElement('button'); b.textContent = c; b.onclick = () => { $('#termIn').value = c; $('#termIn').focus(); }; $('#hints').appendChild(b);
+});
+
+// ---------- monitor
+let mon = null, monCount = 0;
+const hms = d => d.toTimeString().slice(0, 8) + '.' + String(d.getMilliseconds()).padStart(3, '0');
+function toggleMonitor() {
+  if (mon) { mon.close(); mon = null; $('#monBtn').textContent = 'Start monitoring'; $('#monBtn').classList.add('primary'); return; }
+  if (!monCount) $('#monOut').innerHTML = '';
+  mon = new EventSource(withTok('/api/monitor'));
+  $('#monBtn').textContent = 'Stop'; $('#monBtn').classList.remove('primary');
+  const buf = []; let sched = false;
+  mon.addEventListener('cmd', e => {
+    const line = JSON.parse(e.data), f = $('#monFilter').value;
+    if (f && !line.toLowerCase().includes(f.toLowerCase())) return;
+    buf.push(line);
+    if (!sched) { sched = true; requestAnimationFrame(() => {
+      const out = $('#monOut'), stick = out.scrollTop + out.clientHeight >= out.scrollHeight - 30;
+      monCount += buf.length;
+      out.insertAdjacentHTML('beforeend', buf.splice(0).map(l => { const m = l.match(/^(\S+) \[(.*?)\] (.*)$/); if (!m) return `<div>${esc(l)}</div>`; const parts = m[3].match(/^("(?:[^"\\]|\\.)*")(.*)$/); return `<div><span class="ts">${hms(new Date(parseFloat(m[1])*1000))}</span> <span class="cl">[${esc(m[2])}]</span> <span class="c">${esc(parts?parts[1]:m[3])}</span>${esc(parts?parts[2]:'')}</div>`; }).join(''));
+      $('#monCnt').textContent = monCount.toLocaleString();
+      while (out.children.length > 2000) out.firstChild.remove();
+      if (stick) out.scrollTop = out.scrollHeight; sched = false; }); }
+  });
+}
+
+// ---------- pub/sub
+let sub = null;
+function toggleSub() {
+  if (sub) { sub.close(); sub = null; $('#subBtn').textContent = 'Subscribe'; $('#subChips').innerHTML = ''; return; }
+  const chans = $('#subIn').value.split(',').map(s => s.trim()).filter(Boolean); if (!chans.length) return toast('Enter at least one channel');
+  sub = new EventSource(withTok('/api/pubsub?channels=' + encodeURIComponent(chans.join(','))));
+  $('#subBtn').textContent = 'Unsubscribe'; $('#subChips').innerHTML = chans.map(c => `<span class="chip">${esc(c)}</span>`).join('');
+  $('#subOut').innerHTML = '';
+  sub.addEventListener('message', e => {
+    const m = JSON.parse(e.data), out = $('#subOut');
+    out.insertAdjacentHTML('beforeend', `<div><span class="ts">${hms(new Date(m.time))}</span> <span class="ch">${esc(m.channel)}</span>${m.pattern?` <span class="cl">(${esc(m.pattern)})</span>`:''} ${esc(m.message)}</div>`);
+    out.scrollTop = out.scrollHeight;
+  });
+}
+async function publish() {
+  const ch = $('#pubCh').value.trim(), msg = $('#pubMsg').value; if (!ch) return;
+  const r = await exec(['PUBLISH', ch, msg]); $('#pubRes').textContent = `Delivered to ${r.result} subscriber(s)`; $('#pubMsg').value = '';
+}
+$('#pubMsg').onkeydown = e => e.key === 'Enter' && publish();
+$('#subIn').onkeydown = e => e.key === 'Enter' && toggleSub();
+
+// ---------- slowlog / clients / server
+async function loadSlowlog() {
+  const [rows, cfg] = await Promise.all([api('/api/slowlog'), api('/api/config')]);
+  $('#slowTh').textContent = fmtNum(+cfg['slowlog-log-slower-than']);
+  $('#slowBody').innerHTML = rows.length ? rows.map(r => `<tr><td>${r.id}</td><td>${new Date(r.time*1000).toLocaleTimeString()}</td><td style="color:var(--amber)">${fmtNum(r.durationUs)} µs</td><td>${esc(r.args.join(' '))}</td><td>${esc(r.client)}</td></tr>`).join('') : '<tr><td colspan="5" class="empty">No slow commands recorded</td></tr>';
+}
+async function loadClients() {
+  const rows = await api('/api/clients');
+  $('#cliBody').innerHTML = rows.length ? rows.map(c => `<tr><td>${c.id}</td><td>${esc(c.addr)}</td><td>${esc(c.name||'–')}</td><td>${fmtDur(c.ageSec)}</td><td>${fmtDur(c.idleSec)}</td><td><span class="badge b-${{normal:'string',blocked:'zset',pubsub:'list',multi:'hash',monitor:'set'}[c.flags]}">${c.flags}</span></td><td>${esc(c.lastCmd||'–')}</td><td><button class="btn sm danger" onclick="exec(['CLIENT','KILL','ID','${c.id}']).then(loadClients)">Kill</button></td></tr>`).join('') : '<tr><td colspan="8" class="empty">No TCP clients connected — try <code>redis-cli -p 6379</code></td></tr>';
+}
+async function loadConfig() {
+  const cfg = await api('/api/config');
+  const editable = ['maxmemory','maxmemory-policy','maxmemory-samples','appendfsync','slowlog-log-slower-than','slowlog-max-len','save'];
+  $('#cfgBody').innerHTML = Object.keys(cfg).sort().map(k => `<tr><td style="color:var(--muted)">${k}</td><td>${editable.includes(k) ? `<input class="in" style="width:100%;padding:5px 8px" value="${esc(cfg[k])}" onchange="setCfg('${k}', this.value)">` : esc(cfg[k])}</td></tr>`).join('');
+}
+async function setCfg(k, v) { const r = await exec(['CONFIG','SET',k,v]); toast(r.type==='error' ? '✗ '+r.result.error : `✓ ${k} = ${v}`); loadConfig(); }
+async function loadInfo() { const r = await exec('INFO everything'); $('#infoOut').textContent = r.result; }
+
+// ---------- boot
+startStream();
+const initial = location.hash.slice(1); if (titles[initial]) show(initial);
+</script>
+</body>
+</html>
